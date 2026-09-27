@@ -6,7 +6,6 @@ import chromadb
 from fastapi import FastAPI
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
-from sentence_transformers import SentenceTransformer
 
 MOCK_LLM = os.getenv("MOCK_LLM", "1")
 APP_ROOT = Path(__file__).resolve().parent
@@ -69,7 +68,16 @@ def classify_intent(question: str) -> Literal["policy_question", "general_questi
 client = chromadb.Client()
 collection_name = "zepto_policy_docs"
 collection = client.get_or_create_collection(collection_name)
-encoder = SentenceTransformer("all-MiniLM-L6-v2")
+encoder = None
+
+
+def get_encoder():
+    global encoder
+    if encoder is None:
+        from sentence_transformers import SentenceTransformer
+
+        encoder = SentenceTransformer("all-MiniLM-L6-v2")
+    return encoder
 
 
 def ingest_documents():
@@ -84,12 +92,12 @@ def ingest_documents():
         docs.append(text)
         metas.append({"source": file_path.name})
     if docs:
-        embeddings = encoder.encode(docs).tolist()
+        embeddings = get_encoder().encode(docs).tolist()
         collection.add(documents=docs, embeddings=embeddings, metadatas=metas, ids=ids)
 
 
 def retrieve_top_chunks(query: str, top_k: int = 3):
-    embedding = encoder.encode(query).tolist()
+    embedding = get_encoder().encode(query).tolist()
     result = collection.query(query_embeddings=[embedding], n_results=top_k)
     return result
 
@@ -157,11 +165,6 @@ graph_builder.add_conditional_edges("classify_intent", route_intent)
 graph_builder.add_edge("retrieve_and_answer", END)
 graph_builder.add_edge("direct_answer", END)
 support_graph = graph_builder.compile()
-
-
-@app.on_event("startup")
-def startup_event():
-    ingest_documents()
 
 
 @app.get("/health")

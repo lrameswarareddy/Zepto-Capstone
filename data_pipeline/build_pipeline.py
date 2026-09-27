@@ -105,14 +105,14 @@ def clean_books(df):
     df = df.copy()
     df["price_gbp"] = pd.to_numeric(df["price_gbp"], errors="coerce")
     df["rating"] = pd.to_numeric(df["rating"], errors="coerce")
-    df["in_stock"] = df["in_stock"].map({True: 1, False: 0})
+    df["in_stock"] = df["in_stock"].astype("boolean")
 
     median_price = df["price_gbp"].median()
     median_rating = df["rating"].median()
     df["price_gbp"] = df["price_gbp"].fillna(median_price)
     df["rating"] = df["rating"].fillna(median_rating)
     df["rating"] = df["rating"].round().astype(int)
-    df["in_stock"] = df["in_stock"].fillna(df["in_stock"].mode().iloc[0])
+    df["in_stock"] = df["in_stock"].fillna(bool(df["in_stock"].mode().iloc[0])).astype(bool)
     df["price_inr"] = (df["price_gbp"] * CONVERSION_RATE).round(2)
     df["category"] = df["category"].fillna("Unknown")
     return df
@@ -121,6 +121,7 @@ def clean_books(df):
 def create_database(db_path: Path):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA foreign_keys = ON")
     cursor.execute("DROP TABLE IF EXISTS books")
     cursor.execute("DROP TABLE IF EXISTS categories")
     cursor.execute("CREATE TABLE categories (category_id INTEGER PRIMARY KEY, category_name TEXT UNIQUE)")
@@ -148,7 +149,7 @@ def create_database(db_path: Path):
     for _, row in cleaned_df.iterrows():
         cursor.execute(
             "INSERT INTO books (title, price_gbp, price_inr, rating, in_stock, category_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (row["title"], float(row["price_gbp"]), float(row["price_inr"]), int(row["rating"]), int(row["in_stock"]), mapping[row["category"]]),
+            (row["title"], float(row["price_gbp"]), float(row["price_inr"]), int(row["rating"]), int(bool(row["in_stock"])), mapping[row["category"]]),
         )
 
     conn.commit()

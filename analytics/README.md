@@ -36,6 +36,15 @@ The identical stratified 80/20 split is used for all classifiers. Stratification
 | Decision Tree | 0.7697 | 0.6901 | 0.7206 | 0.7050 | 0.7541 |
 | Random Forest | 0.8202 | 0.7812 | 0.7353 | 0.7576 | 0.8179 |
 
+The combined comparison output keeps classifier and regression metrics in separate groups:
+
+| Model | Accuracy | Precision | Recall | F1 | AUC | Regression MAE | Regression RMSE | Regression R2 | Regression Adjusted R2 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Logistic Regression | 0.8090 | 0.7833 | 0.6912 | 0.7344 | 0.8610 | - | - | - | - |
+| Decision Tree | 0.7697 | 0.6901 | 0.7206 | 0.7050 | 0.7541 | - | - | - | - |
+| Random Forest | 0.8202 | 0.7812 | 0.7353 | 0.7576 | 0.8179 | - | - | - | - |
+| Fare Linear Regression | - | - | - | - | - | 21.0986 | 41.7021 | 0.3482 | 0.3091 |
+
 Imbalance comparison on the test fold:
 
 | Variant | Precision | Recall | F1 |
