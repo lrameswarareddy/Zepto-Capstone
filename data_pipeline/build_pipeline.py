@@ -157,6 +157,8 @@ def show_queries(db_path: Path):
         ("SELECT DISTINCT rating FROM books ORDER BY rating ASC", "DISTINCT"),
         ("SELECT title, price_inr FROM books WHERE price_inr BETWEEN 2000 AND 5000 ORDER BY price_inr LIMIT 10", "BETWEEN"),
         ("SELECT title, category_id FROM books WHERE category_id IN (1, 2) ORDER BY title LIMIT 10", "IN"),
+        ("SELECT c.category_name, COUNT(*) AS book_count FROM categories c JOIN books b ON b.category_id = c.category_id GROUP BY c.category_name ORDER BY book_count DESC", "JOIN + GROUP BY"),
+        ("SELECT c.category_name, AVG(b.price_inr) AS average_price_inr FROM categories c JOIN books b ON b.category_id = c.category_id GROUP BY c.category_name ORDER BY average_price_inr DESC", "JOIN + AVG"),
         (
             "SELECT b.title, c.category_name, b.rating FROM books b JOIN categories c ON b.category_id = c.category_id ORDER BY b.rating DESC, b.title ASC LIMIT 10",
             "JOIN + ORDER BY",

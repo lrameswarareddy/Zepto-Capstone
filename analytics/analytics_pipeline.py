@@ -8,14 +8,18 @@ import seaborn as sns
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
     f1_score,
+    mean_absolute_error,
+    mean_squared_error,
     precision_score,
+    r2_score,
     recall_score,
     roc_auc_score,
+    roc_curve,
 )
 from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.pipeline import Pipeline
@@ -78,6 +82,14 @@ def survival_breakdown(df):
     print("\nSurvival by sex and pclass:")
     print(df.groupby(["sex", "pclass"])["survived"].mean().round(4))
 
+    plt.figure(figsize=(8, 5))
+    sns.barplot(data=df, x="sex", y="survived", hue="pclass", errorbar=None)
+    plt.ylabel("Survival rate")
+    plt.title("Survival rate by sex and passenger class")
+    plt.tight_layout()
+    plt.savefig(OUTPUT_DIR / "survival_by_sex_class.png")
+    plt.close()
+
 
 def corr_heatmap(df):
     cols = ["survived", "pclass", "age", "sibsp", "parch", "fare"]
@@ -101,6 +113,84 @@ def standardization_check(df):
     print(df["age_z"].describe())
     print("\nFare z-score summary:")
     print(df["fare_z"].describe())
+
+
+def plot_model_roc_curves(result_rows, y_test):
+    plt.figure(figsize=(8, 6))
+    for row in result_rows:
+        false_positive_rate, true_positive_rate, _ = roc_curve(y_test, row["probabilities"])
+        plt.plot(false_positive_rate, true_positive_rate, label=f"{row['model']} (AUC={row['auc']:.3f})")
+    plt.plot([0, 1], [0, 1], "k--", label="Chance")
+    plt.xlabel("False positive rate")
+    plt.ylabel("True positive rate")
+    plt.title("Classifier ROC curves")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(OUTPUT_DIR / "roc_curves.png")
+    plt.close()
+
+
+def evaluate_imbalance_variants(preprocessor, model, X_train, X_test, y_train, y_test):
+    from imblearn.over_sampling import SMOTE
+
+    transformed_train = preprocessor.fit_transform(X_train, y_train)
+    transformed_test = preprocessor.transform(X_test)
+    variants = {
+        "baseline": model,
+        "class_weight_balanced": RandomForestClassifier(random_state=42, n_estimators=50, class_weight="balanced", n_jobs=1),
+    }
+    rows = []
+    for name, estimator in variants.items():
+        estimator.fit(transformed_train, y_train)
+        predictions = estimator.predict(transformed_test)
+        rows.append({"variant": name, "precision": precision_score(y_test, predictions), "recall": recall_score(y_test, predictions), "f1": f1_score(y_test, predictions)})
+
+    smote_train, smote_target = SMOTE(random_state=42).fit_resample(transformed_train, y_train)
+    smote_model = RandomForestClassifier(random_state=42, n_estimators=50, n_jobs=1)
+    smote_model.fit(smote_train, smote_target)
+    predictions = smote_model.predict(transformed_test)
+    rows.append({"variant": "smote_training_only", "precision": precision_score(y_test, predictions), "recall": recall_score(y_test, predictions), "f1": f1_score(y_test, predictions)})
+    comparison = pd.DataFrame(rows).round(4)
+    print("\nClass balance:")
+    print(y_train.value_counts(normalize=True).rename("proportion"))
+    print("\nImbalance comparison:")
+    print(comparison)
+    return comparison
+
+
+def run_regression(df):
+    regression_features = ["survived", "pclass", "age", "sibsp", "parch", "sex", "embarked"]
+    regression_df = df[regression_features + ["fare"]].copy()
+    target = regression_df.pop("fare")
+    train_features, test_features, train_target, test_target = train_test_split(regression_df, target, test_size=0.2, random_state=42)
+    numeric_features = ["survived", "pclass", "age", "sibsp", "parch"]
+    categorical_features = ["sex", "embarked"]
+    regression_preprocessor = ColumnTransformer(
+        transformers=[
+            ("num", Pipeline([("imputer", SimpleImputer(strategy="median")), ("scaler", StandardScaler())]), numeric_features),
+            ("cat", Pipeline([("imputer", SimpleImputer(strategy="most_frequent")), ("onehot", OneHotEncoder(handle_unknown="ignore"))]), categorical_features),
+        ]
+    )
+    regression_pipeline = Pipeline([("preprocessor", regression_preprocessor), ("model", LinearRegression())])
+    regression_pipeline.fit(train_features, train_target)
+    predictions = regression_pipeline.predict(test_features)
+    residuals = test_target - predictions
+    transformed_feature_count = regression_pipeline.named_steps["preprocessor"].transform(train_features).shape[1]
+    r2 = r2_score(test_target, predictions)
+    adjusted_r2 = 1 - (1 - r2) * (len(test_target) - 1) / (len(test_target) - transformed_feature_count - 1)
+    metrics = {"mae": mean_absolute_error(test_target, predictions), "rmse": mean_squared_error(test_target, predictions) ** 0.5, "r2": r2, "adjusted_r2": adjusted_r2}
+    print("\nFare regression metrics:")
+    print(pd.Series(metrics).round(4))
+    plt.figure(figsize=(8, 5))
+    sns.scatterplot(x=predictions, y=residuals)
+    plt.axhline(0, color="black", linestyle="--")
+    plt.xlabel("Predicted fare")
+    plt.ylabel("Residual")
+    plt.title("Fare regression residual plot")
+    plt.tight_layout()
+    plt.savefig(OUTPUT_DIR / "fare_regression_residuals.png")
+    plt.close()
+    return metrics
 
 
 def build_model_pipeline():
@@ -168,13 +258,28 @@ def build_model_pipeline():
                 "f1": f1_score(y_test, preds, zero_division=0),
                 "auc": roc_auc_score(y_test, probs),
                 "confusion": confusion_matrix(y_test, preds),
+                "probabilities": probs,
             }
         )
 
     print("\nModel metrics:")
     for row in result_rows:
-        print(json.dumps({k: (round(v, 4) if isinstance(v, float) else v) for k, v in row.items() if k != "confusion"}, indent=2))
+        print(json.dumps({k: (round(v, 4) if isinstance(v, float) else v) for k, v in row.items() if k not in {"confusion", "probabilities"}}, indent=2))
         print("confusion_matrix:\n", row["confusion"])
+
+    classification_table = pd.DataFrame(
+        [{key: row[key] for key in ["model", "accuracy", "precision", "recall", "f1", "auc"]} for row in result_rows]
+    ).round(4)
+    print("\nClassification comparison table:\n", classification_table)
+    plot_model_roc_curves(result_rows, y_test)
+    evaluate_imbalance_variants(
+        preprocessor,
+        RandomForestClassifier(random_state=42, n_estimators=50, n_jobs=1),
+        X_train,
+        X_test,
+        y_train,
+        y_test,
+    )
 
     best_model_name = max(result_rows, key=lambda row: row["f1"])["model"]
     best_pipeline = Pipeline([("preprocessor", preprocessor), ("model", models[best_model_name])])
@@ -211,6 +316,10 @@ def build_model_pipeline():
     )
     plt.savefig(OUTPUT_DIR / "decision_tree.png")
     plt.close()
+
+    regression_metrics = run_regression(df)
+    print("\nSeparate regression metrics table:\n", pd.DataFrame([regression_metrics]).round(4))
+    print("Residual interpretation: the residual plot should be checked for a widening funnel; a visibly widening spread would indicate heteroscedasticity.")
 
 
 def main():

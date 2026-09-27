@@ -4,6 +4,7 @@ from typing import Literal, TypedDict
 
 import chromadb
 from fastapi import FastAPI
+from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 
@@ -24,7 +25,7 @@ class AskResponse(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
-class State(TypedDict):
+class State(TypedDict, total=False):
     query: str
     intent: str
     relevant_docs: list[str]
@@ -93,6 +94,71 @@ def retrieve_top_chunks(query: str, top_k: int = 3):
     return result
 
 
+def mock_mode() -> bool:
+    return str(MOCK_LLM).lower() in {"", "1", "true"}
+
+
+def generate_real_answer(query: str, context: list[str], sources: list[str]) -> AskResponse:
+    """Placeholder extension point with bounded structured-output retries."""
+    for attempt in range(3):
+        try:
+            if not context:
+                raise ValueError("No grounded context available")
+            raise NotImplementedError("Configure a real LLM provider for MOCK_LLM=0")
+        except (ValueError, NotImplementedError) as error:
+            if attempt == 2:
+                return AskResponse(answer=f"Real LLM response unavailable: {error}", sources=sources, confidence=0.0)
+    return AskResponse(answer="Real LLM response unavailable.", sources=sources, confidence=0.0)
+
+
+def classify_intent_node(state: State) -> State:
+    state["intent"] = classify_intent(state["query"])
+    return state
+
+
+def retrieve_and_answer_node(state: State) -> State:
+    ingest_documents()
+    hits = retrieve_top_chunks(state["query"])
+    sources = hits.get("ids", [[]])[0]
+    snippets = hits.get("documents", [[]])[0]
+    state["relevant_docs"] = snippets
+    if mock_mode():
+        top_snippet = snippets[0][:200] if snippets else "No supporting context found."
+        response = AskResponse(answer=f"Based on the retrieved context: {top_snippet}", sources=sources, confidence=1.0)
+    else:
+        response = generate_real_answer(state["query"], snippets, sources)
+    state["answer"] = response.answer
+    state["sources"] = response.sources
+    state["confidence"] = response.confidence
+    return state
+
+
+def direct_answer_node(state: State) -> State:
+    if mock_mode():
+        response = AskResponse(answer="I can only answer questions about Zepto policies right now.", sources=[], confidence=1.0)
+    else:
+        response = generate_real_answer(state["query"], [], [])
+    state["answer"] = response.answer
+    state["sources"] = response.sources
+    state["confidence"] = response.confidence
+    return state
+
+
+def route_intent(state: State) -> Literal["retrieve_and_answer", "direct_answer"]:
+    return "retrieve_and_answer" if state["intent"] == "policy_question" else "direct_answer"
+
+
+graph_builder = StateGraph(State)
+graph_builder.add_node("classify_intent", classify_intent_node)
+graph_builder.add_node("retrieve_and_answer", retrieve_and_answer_node)
+graph_builder.add_node("direct_answer", direct_answer_node)
+graph_builder.add_edge(START, "classify_intent")
+graph_builder.add_conditional_edges("classify_intent", route_intent)
+graph_builder.add_edge("retrieve_and_answer", END)
+graph_builder.add_edge("direct_answer", END)
+support_graph = graph_builder.compile()
+
+
 @app.on_event("startup")
 def startup_event():
     ingest_documents()
@@ -105,18 +171,5 @@ def health():
 
 @app.post("/ask", response_model=AskResponse)
 def ask_endpoint(payload: AskRequest):
-    intent = classify_intent(payload.query)
-    if intent == "policy_question":
-        hits = retrieve_top_chunks(payload.query)
-        doc_ids = hits.get("ids", [[]])[0]
-        snippets = hits.get("documents", [[]])[0]
-        top_snippet = snippets[0][:200] if snippets else "No supporting context found."
-        if str(MOCK_LLM).lower() in {"", "1", "true"}:
-            answer = f"Based on the retrieved context: {top_snippet}"
-            return AskResponse(answer=answer, sources=doc_ids, confidence=1.0)
-        answer = "I can answer policy questions using all retrieved context when the real LLM mode is enabled."
-        return AskResponse(answer=answer, sources=doc_ids, confidence=1.0)
-
-    if str(MOCK_LLM).lower() in {"", "1", "true"}:
-        return AskResponse(answer="I can only answer questions about Zepto policies right now.", sources=[], confidence=1.0)
-    return AskResponse(answer="I can only answer questions about Zepto policies right now.", sources=[], confidence=1.0)
+    result = support_graph.invoke({"query": payload.query})
+    return AskResponse(answer=result["answer"], sources=result["sources"], confidence=result["confidence"])
