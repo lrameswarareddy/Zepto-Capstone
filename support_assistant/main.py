@@ -107,7 +107,7 @@ def mock_mode() -> bool:
 
 
 def generate_real_answer(query: str, context: list[str], sources: list[str]) -> AskResponse:
-    """Placeholder extension point with bounded structured-output retries."""
+    """Return a bounded failure response when real-provider mode is unavailable."""
     for attempt in range(3):
         try:
             if not context:

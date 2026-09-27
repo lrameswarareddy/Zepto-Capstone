@@ -24,7 +24,7 @@ query -> classify_intent node -> conditional route -> retrieve_and_answer node
 
 `ingest_documents()` reads and embeds one chunk per policy document. `retrieve_and_answer_node()` embeds a policy query and retrieves the top three chunks from the `zepto_policy_docs` collection. In mock mode it returns the first 200 characters of the highest-ranked chunk. `direct_answer_node()` handles general questions without retrieval. The graph in `main.py` is a LangGraph `StateGraph` with `classify_intent`, `retrieve_and_answer`, and `direct_answer` nodes plus a conditional edge.
 
-Only final answer generation branches on `MOCK_LLM`: the default value (`1`) uses the deterministic response; `MOCK_LLM=0` enters the bounded three-attempt real-provider extension point. Retrieval and embeddings run in both modes.
+Only final answer generation branches on `MOCK_LLM`: the default value (`1`) uses the deterministic response; `MOCK_LLM=0` uses the bounded real-provider path. Retrieval and embeddings run in both modes.
 
 ## Example Responses
 
