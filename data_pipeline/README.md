@@ -6,7 +6,7 @@ Run from the repository root:
 python data_pipeline\build_pipeline.py
 ```
 
-The script uses `requests` and `BeautifulSoup` to scrape the first five categories from Books to Scrape and produces at least 60 books across at least three categories. The current run produces 87 rows.
+The script uses `requests` and `BeautifulSoup` to scrape all paginated listing pages in the Travel, Mystery, and Historical Fiction categories from Books to Scrape. It produces at least 60 books across three categories without manual copy-pasting; the row count is printed after each run. The full catalogue category is intentionally excluded because it duplicates books from the named categories and contains roughly 1,000 pages of listings.
 
 Cleaning decisions:
 

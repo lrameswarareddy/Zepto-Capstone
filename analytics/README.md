@@ -17,12 +17,14 @@ The script reads `titanic.csv` after the first dataset creation, so later runs a
 
 ## EDA Interpretations
 
-- The age histogram and box plot show a broad adult-age distribution with a smaller upper tail; the IQR rule reports 65 age outliers. These values are retained because they represent plausible passenger ages and the model pipeline is robust to them.
-- The fare histogram and box plot show a strongly right-skewed distribution with 114 IQR outliers. The mean fare is 32.10, above the median 14.45, which is above the mode 8.05, confirming right skew.
+- The age histogram shows a broad adult-age distribution with a smaller upper tail; it helps establish the shape and concentration of passenger ages. The age box plot reports 65 IQR outliers, which are retained because they represent plausible passenger ages and the model pipeline is robust to them.
+- The fare histogram shows a strongly right-skewed distribution: the mean fare is 32.10, above the median 14.45, which is above the mode 8.05. The fare box plot reports 114 IQR outliers, confirming that a small number of expensive tickets drive a long upper tail.
 - The survival-by-sex/class chart shows that female passengers survived more often than male passengers in every class. The strongest contrast is between first-class females (96.74%) and third-class males (13.54%), indicating that sex and class jointly explain meaningful variation.
 - The six-column heatmap excludes the redundant boolean flags and uses exactly survived, pclass, age, sibsp, parch, and fare. The two strongest absolute correlations are pclass-fare (-0.548) and sibsp-parch (0.415); class is associated with ticket price, while family group variables move together.
 - Z-score summaries for age and fare have means approximately 0 and standard deviations approximately 1, confirming the exploratory standardization step.
-- The residual plot is expected to show a widening spread at higher predicted fares, so the fare regression has evidence of heteroscedasticity rather than constant residual variance.
+- The ROC chart compares all three classifiers against the chance diagonal; Logistic Regression has the highest AUC at 0.8610, while the other curves show useful but weaker ranking performance.
+- The residual plot shows a wider residual spread for higher fitted fares: the lower/upper fitted-half standard deviations are 13.2160 and 57.2069. This is evidence of heteroscedasticity rather than constant residual variance.
+- The decision-tree chart is limited to four displayed levels so the one-hot encoded feature labels remain readable; it highlights the strongest early splits while the fitted tree remains unchanged.
 
 ## Modeling Results
 
@@ -44,8 +46,8 @@ Imbalance comparison on the test fold:
 
 The baseline has the best F1 and precision, while balanced weights improve recall. SMOTE is applied only to transformed training data and performs worst on this split, so the baseline Random Forest is preferred for balanced overall performance.
 
-Grid search selects `n_estimators=50`, `max_depth=None`, and `max_features="sqrt"`; the fitted estimator reports an OOB score of 0.7989.
+Grid search tunes `n_estimators`, `max_depth`, `min_samples_split`, and `max_features`. The validated run selects `n_estimators=50`, `max_depth=5`, `min_samples_split=5`, and `max_features="sqrt"`; the fitted estimator reports an OOB score of 0.8158.
 
-The fare regression reports MAE 21.0986, RMSE 41.7021, R2 0.3482, and adjusted R2 0.3091. The regression is useful as a baseline but leaves substantial fare variation unexplained. Random Forest is the recommended classifier because it has the strongest accuracy (0.8202) and F1 (0.7576), while Logistic Regression has the strongest AUC (0.8610); the deployment choice depends on whether balanced classification or ranking quality is more important.
+The fare regression reports MAE 21.0986, RMSE 41.7021, R2 0.3482, and adjusted R2 0.3091. The regression is useful as a baseline but leaves substantial fare variation unexplained, and the measured residual spread confirms heteroscedasticity. Random Forest is the recommended classifier because it has the strongest accuracy (0.8202) and F1 (0.7576), while Logistic Regression has the strongest AUC (0.8610); the deployment choice depends on whether balanced classification or ranking quality is more important.
 
 Generated artifacts include `age_hist.png`, `age_box.png`, `fare_hist.png`, `fare_box.png`, `survival_by_sex_class.png`, `correlation_heatmap.png`, `roc_curves.png`, `fare_regression_residuals.png`, `decision_tree.png`, and `best_pipeline.joblib`.

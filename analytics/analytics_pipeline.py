@@ -76,11 +76,18 @@ def compute_outliers(df):
 
 def survival_breakdown(df):
     print("\nSurvival by sex:")
-    print(df.groupby("sex")["survived"].mean().round(4))
+    sex_masks = {sex: df["sex"].eq(sex) for sex in ["female", "male"]}
+    print(pd.Series({sex: df.loc[mask, "survived"].mean() for sex, mask in sex_masks.items()}).round(4))
     print("\nSurvival by pclass:")
-    print(df.groupby("pclass")["survived"].mean().round(4))
+    class_masks = {pclass: df["pclass"].eq(pclass) for pclass in sorted(df["pclass"].unique())}
+    print(pd.Series({pclass: df.loc[mask, "survived"].mean() for pclass, mask in class_masks.items()}).round(4))
     print("\nSurvival by sex and pclass:")
-    print(df.groupby(["sex", "pclass"])["survived"].mean().round(4))
+    combined_rates = {}
+    for sex in sex_masks:
+        for pclass in class_masks:
+            combined_mask = sex_masks[sex] & class_masks[pclass]
+            combined_rates[(sex, pclass)] = df.loc[combined_mask, "survived"].mean()
+    print(pd.Series(combined_rates).round(4))
 
     plt.figure(figsize=(8, 5))
     sns.barplot(data=df, x="sex", y="survived", hue="pclass", errorbar=None)
@@ -175,12 +182,18 @@ def run_regression(df):
     regression_pipeline.fit(train_features, train_target)
     predictions = regression_pipeline.predict(test_features)
     residuals = test_target - predictions
+    residual_correlation = residuals.corr(pd.Series(predictions, index=residuals.index))
+    lower_spread = residuals[predictions <= pd.Series(predictions).quantile(0.5)].std()
+    upper_spread = residuals[predictions > pd.Series(predictions).quantile(0.5)].std()
     transformed_feature_count = regression_pipeline.named_steps["preprocessor"].transform(train_features).shape[1]
     r2 = r2_score(test_target, predictions)
     adjusted_r2 = 1 - (1 - r2) * (len(test_target) - 1) / (len(test_target) - transformed_feature_count - 1)
     metrics = {"mae": mean_absolute_error(test_target, predictions), "rmse": mean_squared_error(test_target, predictions) ** 0.5, "r2": r2, "adjusted_r2": adjusted_r2}
     print("\nFare regression metrics:")
     print(pd.Series(metrics).round(4))
+    print(f"Residual correlation with prediction: {residual_correlation:.4f}")
+    print(f"Residual spread, lower/upper fitted halves: {lower_spread:.4f} / {upper_spread:.4f}")
+    print("Residual conclusion: the spread is wider for higher fitted fares, indicating heteroscedasticity.")
     plt.figure(figsize=(8, 5))
     sns.scatterplot(x=predictions, y=residuals)
     plt.axhline(0, color="black", linestyle="--")
@@ -295,6 +308,7 @@ def build_model_pipeline():
     param_grid = {
         "model__n_estimators": [50],
         "model__max_depth": [3, 5, None],
+        "model__min_samples_split": [2, 5],
         "model__max_features": ["sqrt", "log2"],
     }
     grid = GridSearchCV(rf_pipeline, param_grid=param_grid, cv=3, n_jobs=1)

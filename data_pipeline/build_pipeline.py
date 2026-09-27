@@ -1,6 +1,7 @@
 import re
 import sqlite3
 from pathlib import Path
+from urllib.parse import urljoin
 
 import pandas as pd
 import requests
@@ -23,14 +24,14 @@ def fetch_page(url: str):
 
 
 def fetch_category_urls():
-    """Return a compact list of category URLs used for scraping."""
+    """Return category URLs from the site's navigation."""
     response = fetch_page("https://books.toscrape.com/")
     soup = BeautifulSoup(response.text, "html.parser")
     links = []
     for a in soup.select("ul.nav-list li a"):
         href = a.get("href")
         if href and "category" in href:
-            links.append("https://books.toscrape.com/" + href)
+            links.append(urljoin(response.url, href))
     return list(dict.fromkeys(links))
 
 
@@ -61,33 +62,39 @@ def parse_availability(value):
     return None
 
 
-def scrape_books(limit_per_category=25):
+def scrape_books():
     rows = []
     seen_titles = set()
-    categories = fetch_category_urls()[:5]
+    categories = fetch_category_urls()[1:4]
     for category_url in categories:
-        response = fetch_page(category_url)
-        soup = BeautifulSoup(response.text, "html.parser")
-        category_name = soup.select_one("h1").get_text(strip=True) if soup.select_one("h1") else "Unknown"
-        for item in soup.select("article.product_pod")[:limit_per_category]:
-            title = item.select_one("h3 a").get("title", "").strip() if item.select_one("h3 a") else ""
-            if not title or title in seen_titles:
-                continue
-            seen_titles.add(title)
-            price_tag = item.select_one("p.price_color")
-            rating_tag = item.select_one("p.star-rating")
-            stock_tag = item.select_one("p.instock.availability")
-            star_classes = rating_tag.get("class", []) if rating_tag else []
-            rating_value = parse_rating(star_classes[-1] if star_classes else "")
-            rows.append(
-                {
-                    "title": title,
-                    "price_gbp": parse_price(price_tag.get_text(strip=True) if price_tag else None),
-                    "rating": rating_value,
-                    "in_stock": parse_availability(stock_tag.get_text(strip=True) if stock_tag else None),
-                    "category": category_name,
-                }
-            )
+        page_url = category_url
+        visited_pages = set()
+        while page_url and page_url not in visited_pages:
+            visited_pages.add(page_url)
+            response = fetch_page(page_url)
+            soup = BeautifulSoup(response.text, "html.parser")
+            category_name = soup.select_one("h1").get_text(strip=True) if soup.select_one("h1") else "Unknown"
+            for item in soup.select("article.product_pod"):
+                title = item.select_one("h3 a").get("title", "").strip() if item.select_one("h3 a") else ""
+                if not title or title in seen_titles:
+                    continue
+                seen_titles.add(title)
+                price_tag = item.select_one("p.price_color")
+                rating_tag = item.select_one("p.star-rating")
+                stock_tag = item.select_one("p.instock.availability")
+                star_classes = rating_tag.get("class", []) if rating_tag else []
+                rating_value = parse_rating(star_classes[-1] if star_classes else "")
+                rows.append(
+                    {
+                        "title": title,
+                        "price_gbp": parse_price(price_tag.get_text(strip=True) if price_tag else None),
+                        "rating": rating_value,
+                        "in_stock": parse_availability(stock_tag.get_text(strip=True) if stock_tag else None),
+                        "category": category_name,
+                    }
+                )
+            next_link = soup.select_one("li.next a")
+            page_url = urljoin(response.url, next_link.get("href")) if next_link else None
     if len(rows) < 60:
         raise ValueError(f"Expected at least 60 books, but scraped {len(rows)}.")
     df = pd.DataFrame(rows)
