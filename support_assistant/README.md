@@ -9,6 +9,8 @@ python -m uvicorn main:app --reload
 
 The default path is deterministic and offline for LLM generation. `sentence-transformers` creates local `all-MiniLM-L6-v2` embeddings and ChromaDB stores the eight policy documents from `docs/`.
 
+Embedding-model import and document ingestion are lazy: `/health` and general policy-independent questions respond without loading the model; the first policy question loads the local model and indexes the documents.
+
 ## Architecture
 
 ```text
