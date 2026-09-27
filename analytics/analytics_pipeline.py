@@ -106,6 +106,12 @@ def corr_heatmap(df):
     plt.title("Titanic correlation heatmap")
     plt.savefig(OUTPUT_DIR / "correlation_heatmap.png")
     plt.close()
+    pairs = []
+    for index, first_column in enumerate(cols):
+        for second_column in cols[index + 1:]:
+            pairs.append((first_column, second_column, corr.loc[first_column, second_column]))
+    strongest_pairs = sorted(pairs, key=lambda pair: abs(pair[2]), reverse=True)[:2]
+    print("Strongest absolute correlations:", strongest_pairs)
     return corr
 
 
@@ -333,7 +339,14 @@ def build_model_pipeline():
 
     regression_metrics = run_regression(df)
     print("\nSeparate regression metrics table:\n", pd.DataFrame([regression_metrics]).round(4))
-    print("Residual interpretation: the residual plot should be checked for a widening funnel; a visibly widening spread would indicate heteroscedasticity.")
+    combined_table = classification_table.copy()
+    for metric in ["mae", "rmse", "r2", "adjusted_r2"]:
+        combined_table[f"regression_{metric}"] = None
+    regression_row = {"model": "linear_regression_fare"}
+    regression_row.update({key: None for key in ["accuracy", "precision", "recall", "f1", "auc"]})
+    regression_row.update({f"regression_{key}": value for key, value in regression_metrics.items()})
+    combined_table = pd.concat([combined_table, pd.DataFrame([regression_row])], ignore_index=True)
+    print("\nCombined model comparison table:\n", combined_table.round(4))
 
 
 def main():
