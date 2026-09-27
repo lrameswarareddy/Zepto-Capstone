@@ -10,6 +10,12 @@ Masai AI/ML course submission with three independent modules: a web data pipelin
 
 Module-specific methodology, results, and interpretations are documented in [data_pipeline/README.md](data_pipeline/README.md), [analytics/README.md](analytics/README.md), and [support_assistant/README.md](support_assistant/README.md).
 
+## Design Decisions
+
+- **Data pipeline:** Use three finite named book categories and follow their pagination to produce a reproducible 60-plus-row dataset. Clean prices, ratings, and availability before loading a normalized SQLite category/book schema, using the fixed `1 GBP = 105.50 INR` conversion rate.
+- **Analytics:** Keep the committed Titanic CSV as the offline fallback, apply threshold-based EDA cleaning, and use train-only `ColumnTransformer` preprocessing for classification and fare regression. Compare three classifiers, imbalance strategies, and tuned Random Forest performance before saving the complete best pipeline.
+- **Support assistant:** Use local MiniLM embeddings and ChromaDB for grounded retrieval, route intent with a LangGraph state graph, return deterministic Pydantic responses in mock mode, and expose the workflow through FastAPI with a Dockerfile.
+
 ## Setup
 
 Create and activate a virtual environment, then install the module requirements:
